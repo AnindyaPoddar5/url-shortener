@@ -1,0 +1,168 @@
+openapi: 3.0.3
+info:
+  title: URL Shortener API
+  version: 1.0.0
+  description: Single-administrator URL shortener. UTC timestamps; total committed GET resolutions, not unique visitors.
+servers:
+  - url: http://localhost:8080
+security:
+  - ApiKey: []
+paths:
+  /api/v1/links:
+    post:
+      operationId: createLink
+      summary: Create a link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: {type: string, format: uri, maxLength: 2048, description: Absolute HTTP(S) URL without credentials}
+                customAlias: {type: string, nullable: true, pattern: '^[A-Za-z0-9_-]{4,32}$'}
+                expiresAt: {type: string, format: date-time, nullable: true, description: Must be in the future}
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: {schema: {type: string}, description: Relative management resource URL}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Link'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {description: Alias already reserved}
+        '413': {description: Body exceeds 16KiB}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {description: Storage unavailable or generated code retry budget exhausted}
+  /api/v1/links/{code}:
+    parameters:
+      - {$ref: '#/components/parameters/Code'}
+    get:
+      operationId: getAnalytics
+      summary: Read metadata and analytics including inactive links
+      responses:
+        '200':
+          description: Link metadata
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Link'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {description: Unknown code}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {description: Storage unavailable}
+    delete:
+      operationId: disableLink
+      summary: Disable without deleting analytics; repeatable and irreversible in this API
+      responses:
+        '204': {description: Disabled or already disabled}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {description: Unknown code}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {description: Storage unavailable}
+  /api/v1/links/{code}/expiration:
+    parameters:
+      - {$ref: '#/components/parameters/Code'}
+    patch:
+      operationId: updateExpiration
+      summary: Change expiration; null or omitted expiresAt clears it; disabled links remain disabled
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expiresAt: {type: string, format: date-time, nullable: true}
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Link'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {description: Unknown code}
+        '413': {description: Body exceeds 16KiB}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {description: Storage unavailable}
+  /s/{code}:
+    parameters:
+      - {$ref: '#/components/parameters/Code'}
+    get:
+      operationId: redirect
+      summary: Resolve and count one GET request
+      security: []
+      responses:
+        '302':
+          description: Temporary redirect; Cache-Control no-store
+          headers:
+            Location: {schema: {type: string, format: uri}}
+            Cache-Control: {schema: {type: string, enum: [no-store]}}
+        '404': {description: Unknown code}
+        '410': {description: Expired or disabled}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {description: Storage unavailable}
+    head:
+      operationId: inspectRedirect
+      summary: Same resolution semantics as GET without counting or a response body
+      security: []
+      responses:
+        '302':
+          description: Destination
+          headers:
+            Location: {schema: {type: string, format: uri}}
+        '404': {description: Unknown code}
+        '410': {description: Expired or disabled}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {description: Storage unavailable}
+  /actuator/health:
+    get:
+      operationId: health
+      security: []
+      responses:
+        '200': {description: Healthy}
+        '503': {description: Unhealthy}
+components:
+  securitySchemes:
+    ApiKey: {type: apiKey, in: header, name: X-API-Key}
+  parameters:
+    Code:
+      name: code
+      in: path
+      required: true
+      schema: {type: string}
+  schemas:
+    Link:
+      type: object
+      required: [code, shortUrl, url, createdAt, clicks, enabled]
+      properties:
+        code: {type: string, maxLength: 32}
+        shortUrl: {type: string, format: uri}
+        url: {type: string, format: uri}
+        createdAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time, nullable: true}
+        clicks: {type: integer, format: int64, minimum: 0}
+        lastAccessedAt: {type: string, format: date-time, nullable: true}
+        enabled: {type: boolean}
+    Problem:
+      type: object
+      properties:
+        type: {type: string}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+  responses:
+    BadRequest:
+      description: Invalid input
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Unauthorized:
+      description: Missing or invalid API key
+    RateLimited:
+      description: Single-instance global fixed-window limit exhausted
+      headers:
+        Retry-After: {schema: {type: integer, example: 60}}

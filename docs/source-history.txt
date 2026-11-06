@@ -1,0 +1,5 @@
+c0eb2ec Add brownfield disable feature, validate lifecycle, and document engineering submission
+e63bf0d Greenfield baseline: shortening, analytics, expiry, security and tests
+
+These are local implementation milestones, not approvals or externally published commits.
+The source history is summarized here; the archive excludes the .git directory.

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LinkService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">AI-assisted URL Shortener</a> &gt; <a href="index.source.html" class="el_package">com.example.shortener</a> &gt; <span class="el_source">LinkService.java</span></div><h1>LinkService.java</h1><pre class="source lang-java linenums">package com.example.shortener;
+
+import java.time.Clock;
+import java.time.Instant;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+
+@Service
+public class LinkService {
+    private final LinkRepository repository;
+    private final LinkWriter writer;
+    private final CodeGenerator codes;
+    private final UrlPolicy policy;
+    private final Clock clock;
+    private final TransactionTemplate transaction;
+    public LinkService(LinkRepository repository, LinkWriter writer, CodeGenerator codes, UrlPolicy policy,
+<span class="fc" id="L21">                       Clock clock, PlatformTransactionManager manager) {</span>
+<span class="fc" id="L22">        this.repository = repository; this.writer = writer; this.codes = codes; this.policy = policy;</span>
+<span class="fc" id="L23">        this.clock = clock; this.transaction = new TransactionTemplate(manager);</span>
+<span class="fc" id="L24">    }</span>
+    public Link create(String target, String alias, Instant expiry) {
+<span class="fc" id="L26">        String validated = policy.validate(target);</span>
+<span class="pc bpc" id="L27" title="1 of 2 branches missed.">        if (validated.length() &gt; 2048) throw new ApiException(HttpStatus.BAD_REQUEST, &quot;Encoded URL exceeds 2048 characters&quot;);</span>
+<span class="fc" id="L28">        validateExpiry(expiry);</span>
+<span class="pc bpc" id="L29" title="1 of 4 branches missed.">        if (alias != null &amp;&amp; !alias.matches(&quot;[A-Za-z0-9_-]{4,32}&quot;))</span>
+<span class="nc" id="L30">            throw new ApiException(HttpStatus.BAD_REQUEST, &quot;Alias must contain 4-32 letters, digits, underscores or hyphens&quot;);</span>
+<span class="fc bfc" id="L31" title="All 2 branches covered.">        for (int attempt = 0; attempt &lt; 5; attempt++) {</span>
+<span class="fc bfc" id="L32" title="All 2 branches covered.">            String code = alias == null ? codes.next() : alias;</span>
+            try {
+                // persist(), rather than save()/merge(), guarantees an existing alias cannot be overwritten.
+<span class="fc" id="L35">                return transaction.execute(status -&gt; writer.insert(new Link(code, validated, clock.instant(), expiry)));</span>
+<span class="fc" id="L36">            } catch (DataIntegrityViolationException ex) {</span>
+<span class="fc bfc" id="L37" title="All 2 branches covered.">                if (alias != null) throw new ApiException(HttpStatus.CONFLICT, &quot;Alias already exists&quot;);</span>
+                // Retry in a fresh transaction: a failed constraint leaves the original transaction unusable.
+            }
+        }
+<span class="fc" id="L41">        throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, &quot;Unable to allocate a code; try again&quot;);</span>
+    }
+
+    @Transactional
+    public String resolve(String code, boolean count) {
+<span class="fc" id="L46">        Instant now = clock.instant();</span>
+<span class="fc bfc" id="L47" title="All 4 branches covered.">        if (count &amp;&amp; repository.recordClick(code, now) == 1) return get(code).getTargetUrl();</span>
+<span class="fc" id="L48">        Link link = get(code);</span>
+<span class="fc bfc" id="L49" title="All 2 branches covered.">        if (!link.isEnabled()) throw new ApiException(HttpStatus.GONE, &quot;Link is disabled&quot;);</span>
+<span class="pc bpc" id="L50" title="1 of 4 branches missed.">        if (link.getExpiresAt() != null &amp;&amp; !link.getExpiresAt().isAfter(now))</span>
+<span class="fc" id="L51">            throw new ApiException(HttpStatus.GONE, &quot;Link has expired&quot;);</span>
+<span class="fc" id="L52">        return link.getTargetUrl();</span>
+    }
+    @Transactional(readOnly = true)
+    public Link get(String code) {
+<span class="fc" id="L56">        return repository.findById(code).orElseThrow(() -&gt; new ApiException(HttpStatus.NOT_FOUND, &quot;Link not found&quot;));</span>
+    }
+    @Transactional
+    public Link updateExpiry(String code, Instant expiry) {
+<span class="fc" id="L60">        validateExpiry(expiry);</span>
+<span class="pc bpc" id="L61" title="1 of 2 branches missed.">        if (repository.changeExpiry(code, expiry) == 0) throw new ApiException(HttpStatus.NOT_FOUND, &quot;Link not found&quot;);</span>
+<span class="fc" id="L62">        return get(code);</span>
+    }
+    @Transactional
+    public void disable(String code) {
+<span class="fc bfc" id="L66" title="All 2 branches covered.">        if (repository.disable(code) == 0) throw new ApiException(HttpStatus.NOT_FOUND, &quot;Link not found&quot;);</span>
+<span class="fc" id="L67">    }</span>
+    private void validateExpiry(Instant expiry) {
+<span class="fc bfc" id="L69" title="All 4 branches covered.">        if (expiry != null &amp;&amp; !expiry.isAfter(clock.instant()))</span>
+<span class="fc" id="L70">            throw new ApiException(HttpStatus.BAD_REQUEST, &quot;expiresAt must be in the future&quot;);</span>
+<span class="fc" id="L71">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -1,0 +1,13 @@
+PASS: packaged HTTP lifecycle, analytics, HEAD, authentication, conflicts, expiry update, disable and missing-link checks
+{
+  "requests": 200,
+  "workers": 8,
+  "errors": 0,
+  "recordedClicks": 200,
+  "elapsedSeconds": 0.619,
+  "requestsPerSecond": 322.9,
+  "medianMs": 18.84,
+  "p95Ms": 39.37
+}
+PASS: link survives packaged-server restart on file-backed H2
+PASS: missing production key prevents startup

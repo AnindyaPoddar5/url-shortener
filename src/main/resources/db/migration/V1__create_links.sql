@@ -1,0 +1,8 @@
+CREATE TABLE links (
+  code VARCHAR(32) PRIMARY KEY,
+  target_url VARCHAR(2048) NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  expires_at TIMESTAMP WITH TIME ZONE,
+  clicks BIGINT DEFAULT 0 NOT NULL CHECK (clicks >= 0),
+  last_accessed_at TIMESTAMP WITH TIME ZONE
+);

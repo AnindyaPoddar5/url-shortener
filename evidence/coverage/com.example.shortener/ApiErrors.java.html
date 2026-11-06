@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ApiErrors.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">AI-assisted URL Shortener</a> &gt; <a href="index.source.html" class="el_package">com.example.shortener</a> &gt; <span class="el_source">ApiErrors.java</span></div><h1>ApiErrors.java</h1><pre class="source lang-java linenums">package com.example.shortener;
+
+import org.springframework.http.*;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.dao.DataAccessException;
+
+@RestControllerAdvice
+<span class="fc" id="L10">public class ApiErrors {</span>
+    @ExceptionHandler(ApiException.class)
+<span class="fc" id="L12">    ResponseEntity&lt;ProblemDetail&gt; application(ApiException ex) { return problem(ex.status(), ex.getMessage()); }</span>
+    @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})
+<span class="nc" id="L14">    ResponseEntity&lt;ProblemDetail&gt; validation(Exception ex) { return problem(HttpStatus.BAD_REQUEST, &quot;Invalid request body; check required fields and formats&quot;); }</span>
+    @ExceptionHandler(DataAccessException.class)
+<span class="nc" id="L16">    ResponseEntity&lt;ProblemDetail&gt; database(DataAccessException ex) { return problem(HttpStatus.SERVICE_UNAVAILABLE, &quot;Storage unavailable; try again later&quot;); }</span>
+    private ResponseEntity&lt;ProblemDetail&gt; problem(HttpStatus status, String detail) {
+<span class="fc" id="L18">        return ResponseEntity.status(status).cacheControl(CacheControl.noStore())</span>
+<span class="fc" id="L19">                .body(ProblemDetail.forStatusAndDetail(status, detail));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

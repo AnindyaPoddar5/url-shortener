@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>UrlPolicy.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">AI-assisted URL Shortener</a> &gt; <a href="index.source.html" class="el_package">com.example.shortener</a> &gt; <span class="el_source">UrlPolicy.java</span></div><h1>UrlPolicy.java</h1><pre class="source lang-java linenums">package com.example.shortener;
+
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.Locale;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
+
+@Component
+<span class="fc" id="L10">public class UrlPolicy {</span>
+    public String validate(String target) {
+        try {
+<span class="fc" id="L13">            URI uri = new URI(target);</span>
+<span class="fc bfc" id="L14" title="All 2 branches covered.">            String scheme = uri.getScheme() == null ? &quot;&quot; : uri.getScheme().toLowerCase(Locale.ROOT);</span>
+<span class="pc bpc" id="L15" title="4 of 8 branches missed.">            if (target.length() &gt; 2048 || target.chars().anyMatch(c -&gt; c &lt; 32 || c == 127)</span>
+<span class="fc bfc" id="L16" title="All 4 branches covered.">                    || !(scheme.equals(&quot;http&quot;) || scheme.equals(&quot;https&quot;))</span>
+<span class="pc bpc" id="L17" title="1 of 4 branches missed.">                    || uri.getHost() == null || uri.getRawUserInfo() != null</span>
+<span class="fc bfc" id="L18" title="All 4 branches covered.">                    || uri.getPort() &gt; 65535 || uri.getPort() == 0) {</span>
+<span class="fc" id="L19">                throw new URISyntaxException(target, &quot;Unsupported destination&quot;);</span>
+            }
+<span class="fc" id="L21">            return uri.toASCIIString();</span>
+<span class="fc" id="L22">        } catch (URISyntaxException e) {</span>
+<span class="fc" id="L23">            throw new ApiException(HttpStatus.BAD_REQUEST,</span>
+                    &quot;Destination must be an absolute HTTP(S) URL without credentials, at most 2048 characters&quot;);
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

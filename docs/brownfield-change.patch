@@ -1,0 +1,141 @@
+diff --git a/src/main/java/com/example/shortener/Link.java b/src/main/java/com/example/shortener/Link.java
+index 4539632..1a4d6fb 100644
+--- a/src/main/java/com/example/shortener/Link.java
++++ b/src/main/java/com/example/shortener/Link.java
+@@ -11,6 +11,7 @@ public class Link {
+     @Column(name = "created_at", nullable = false) private Instant createdAt;
+     @Column(name = "expires_at") private Instant expiresAt;
+     @Column(nullable = false) private long clicks;
++    @Column(nullable = false) private boolean enabled = true;
+     @Column(name = "last_accessed_at") private Instant lastAccessedAt;
+     protected Link() { }
+     Link(String code, String targetUrl, Instant createdAt, Instant expiresAt) {
+@@ -20,6 +21,7 @@ public class Link {
+     public String getTargetUrl() { return targetUrl; }
+     public Instant getCreatedAt() { return createdAt; }
+     public Instant getExpiresAt() { return expiresAt; }
++    public boolean isEnabled() { return enabled; }
+     public long getClicks() { return clicks; }
+     public Instant getLastAccessedAt() { return lastAccessedAt; }
+ }
+diff --git a/src/main/java/com/example/shortener/LinkController.java b/src/main/java/com/example/shortener/LinkController.java
+index 3a529f4..a687fab 100644
+--- a/src/main/java/com/example/shortener/LinkController.java
++++ b/src/main/java/com/example/shortener/LinkController.java
+@@ -14,7 +14,7 @@ public class LinkController {
+     public record CreateLink(@NotBlank @Size(max = 2048) String url, @Size(max = 32) String customAlias, Instant expiresAt) { }
+     public record ExpiryUpdate(Instant expiresAt) { }
+     public record LinkView(String code, String shortUrl, String url, Instant createdAt, Instant expiresAt,
+-                           long clicks, Instant lastAccessedAt) { }
++                           long clicks, Instant lastAccessedAt, boolean enabled) { }
+     private final LinkService service;
+     private final String baseUrl;
+     public LinkController(LinkService service, @Value("${app.base-url}") String baseUrl) {
+@@ -36,6 +36,10 @@ public class LinkController {
+     public LinkView expiry(@PathVariable String code, @RequestBody ExpiryUpdate body) {
+         return view(service.updateExpiry(code, body.expiresAt()));
+     }
++    @DeleteMapping("/api/v1/links/{code}")
++    public ResponseEntity<Void> disable(@PathVariable String code) {
++        service.disable(code); return ResponseEntity.noContent().build();
++    }
+     @RequestMapping(value = "/s/{code}", method = {RequestMethod.GET, RequestMethod.HEAD})
+     public ResponseEntity<Void> redirect(@PathVariable String code, jakarta.servlet.http.HttpServletRequest request) {
+         return ResponseEntity.status(HttpStatus.FOUND)
+@@ -44,6 +48,6 @@ public class LinkController {
+     }
+     private LinkView view(Link link) {
+         return new LinkView(link.getCode(), baseUrl + "/s/" + link.getCode(), link.getTargetUrl(),
+-                link.getCreatedAt(), link.getExpiresAt(), link.getClicks(), link.getLastAccessedAt());
++                link.getCreatedAt(), link.getExpiresAt(), link.getClicks(), link.getLastAccessedAt(), link.isEnabled());
+     }
+ }
+diff --git a/src/main/java/com/example/shortener/LinkRepository.java b/src/main/java/com/example/shortener/LinkRepository.java
+index 68cb57c..49477ef 100644
+--- a/src/main/java/com/example/shortener/LinkRepository.java
++++ b/src/main/java/com/example/shortener/LinkRepository.java
+@@ -8,9 +8,13 @@ public interface LinkRepository extends JpaRepository<Link, String> {
+     // One conditional SQL update avoids read-modify-write lost increments and expiry races.
+     @Modifying(clearAutomatically = true, flushAutomatically = true)
+     @Query("update Link l set l.clicks = l.clicks + 1, l.lastAccessedAt = :now " +
+-           "where l.code = :code and (l.expiresAt is null or l.expiresAt > :now)")
++           "where l.code = :code and l.enabled = true and (l.expiresAt is null or l.expiresAt > :now)")
+     int recordClick(@Param("code") String code, @Param("now") Instant now);
+ 
++    @Modifying(clearAutomatically = true, flushAutomatically = true)
++    @Query("update Link l set l.enabled = false where l.code = :code")
++    int disable(@Param("code") String code);
++
+     @Modifying(clearAutomatically = true, flushAutomatically = true)
+     @Query("update Link l set l.expiresAt = :expiry where l.code = :code")
+     int changeExpiry(@Param("code") String code, @Param("expiry") Instant expiry);
+diff --git a/src/main/java/com/example/shortener/LinkService.java b/src/main/java/com/example/shortener/LinkService.java
+index f93230e..71ff186 100644
+--- a/src/main/java/com/example/shortener/LinkService.java
++++ b/src/main/java/com/example/shortener/LinkService.java
+@@ -46,6 +46,7 @@ public class LinkService {
+         Instant now = clock.instant();
+         if (count && repository.recordClick(code, now) == 1) return get(code).getTargetUrl();
+         Link link = get(code);
++        if (!link.isEnabled()) throw new ApiException(HttpStatus.GONE, "Link is disabled");
+         if (link.getExpiresAt() != null && !link.getExpiresAt().isAfter(now))
+             throw new ApiException(HttpStatus.GONE, "Link has expired");
+         return link.getTargetUrl();
+@@ -60,6 +61,10 @@ public class LinkService {
+         if (repository.changeExpiry(code, expiry) == 0) throw new ApiException(HttpStatus.NOT_FOUND, "Link not found");
+         return get(code);
+     }
++    @Transactional
++    public void disable(String code) {
++        if (repository.disable(code) == 0) throw new ApiException(HttpStatus.NOT_FOUND, "Link not found");
++    }
+     private void validateExpiry(Instant expiry) {
+         if (expiry != null && !expiry.isAfter(clock.instant()))
+             throw new ApiException(HttpStatus.BAD_REQUEST, "expiresAt must be in the future");
+diff --git a/src/main/java/com/example/shortener/RequestGuard.java b/src/main/java/com/example/shortener/RequestGuard.java
+index 0e63915..2194fe5 100644
+--- a/src/main/java/com/example/shortener/RequestGuard.java
++++ b/src/main/java/com/example/shortener/RequestGuard.java
+@@ -27,7 +27,7 @@ public class RequestGuard extends OncePerRequestFilter {
+     }
+     @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+             throws ServletException, IOException {
+-        String path = request.getServletPath();
++        String path = request.getRequestURI().substring(request.getContextPath().length());
+         if (path.startsWith("/api/") || path.startsWith("/s/")) {
+             if (!allow()) { response.setHeader("Retry-After", "60"); reject(response, 429, "Too Many Requests"); return; }
+             if (request.getContentLengthLong() > 16384) { reject(response, 413, "Payload Too Large"); return; }
+diff --git a/src/test/java/com/example/shortener/ShortenerIntegrationTest.java b/src/test/java/com/example/shortener/ShortenerIntegrationTest.java
+index 64c0018..eb3c10a 100644
+--- a/src/test/java/com/example/shortener/ShortenerIntegrationTest.java
++++ b/src/test/java/com/example/shortener/ShortenerIntegrationTest.java
+@@ -121,6 +121,21 @@ class ShortenerIntegrationTest {
+     @Test void healthIsPublic() throws Exception {
+         mvc.perform(get("/actuator/health")).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("UP"));
+     }
++    @Test void disableIsIdempotentAndPreservesAnalytics() throws Exception {
++        createAlias("disable1"); service.resolve("disable1", true);
++        for (int i = 0; i < 2; i++) mvc.perform(delete("/api/v1/links/disable1").header("X-API-Key", KEY))
++            .andExpect(status().isNoContent());
++        mvc.perform(get("/s/disable1")).andExpect(status().isGone());
++        mvc.perform(head("/s/disable1")).andExpect(status().isGone());
++        mvc.perform(get("/api/v1/links/disable1").header("X-API-Key", KEY))
++            .andExpect(status().isOk()).andExpect(jsonPath("$.clicks").value(1))
++            .andExpect(jsonPath("$.enabled").value(false));
++        assertThatThrownBy(() -> service.create("https://example.com", "disable1", null))
++            .isInstanceOf(ApiException.class).hasMessageContaining("already exists");
++    }
++    @Test void disablingMissingLinkReturns404() throws Exception {
++        mvc.perform(delete("/api/v1/links/missing").header("X-API-Key", KEY)).andExpect(status().isNotFound());
++    }
+     @Test void concurrentClicksAreNotLost() throws Exception {
+         service.create("https://example.com", "parallel", null);
+         try (var pool = Executors.newFixedThreadPool(8)) {
+diff --git a/src/main/resources/db/migration/V2__disable_links.sql b/src/main/resources/db/migration/V2__disable_links.sql
+new file mode 100644
+index 0000000..9f24ef0
+--- /dev/null
++++ b/src/main/resources/db/migration/V2__disable_links.sql
+@@ -0,0 +1,2 @@
++-- Additive migration preserves all existing links and their counters.
++ALTER TABLE links ADD COLUMN enabled BOOLEAN DEFAULT TRUE NOT NULL;

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RequestGuard.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">AI-assisted URL Shortener</a> &gt; <a href="index.source.html" class="el_package">com.example.shortener</a> &gt; <span class="el_source">RequestGuard.java</span></div><h1>RequestGuard.java</h1><pre class="source lang-java linenums">package com.example.shortener;
+
+import jakarta.servlet.*;
+import jakarta.servlet.http.*;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Clock;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+/** Bounded single-instance limiter. A shared gateway limiter is required for multiple replicas. */
+public class RequestGuard extends OncePerRequestFilter {
+    private final byte[] apiKey;
+    private final Clock clock;
+    private final int limit;
+<span class="fc" id="L16">    private long minute = -1;</span>
+    private int requests;
+<span class="fc" id="L18">    public RequestGuard(String apiKey, int limit, Clock clock) {</span>
+<span class="pc bpc" id="L19" title="1 of 4 branches missed.">        if (apiKey == null || apiKey.length() &lt; 24) throw new IllegalArgumentException(&quot;SHORTENER_API_KEY must contain at least 24 characters&quot;);</span>
+<span class="fc bfc" id="L20" title="All 2 branches covered.">        if (limit &lt; 1) throw new IllegalArgumentException(&quot;REQUESTS_PER_MINUTE must be positive&quot;);</span>
+<span class="fc" id="L21">        this.apiKey = apiKey.getBytes(StandardCharsets.UTF_8); this.limit = limit; this.clock = clock;</span>
+<span class="fc" id="L22">    }</span>
+    private synchronized boolean allow() {
+<span class="fc" id="L24">        long current = Math.floorDiv(clock.millis(), 60000);</span>
+<span class="fc bfc" id="L25" title="All 2 branches covered.">        if (current != minute) { minute = current; requests = 0; }</span>
+<span class="fc bfc" id="L26" title="All 2 branches covered.">        return ++requests &lt;= limit;</span>
+    }
+    @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+<span class="fc" id="L30">        String path = request.getRequestURI().substring(request.getContextPath().length());</span>
+<span class="fc bfc" id="L31" title="All 4 branches covered.">        if (path.startsWith(&quot;/api/&quot;) || path.startsWith(&quot;/s/&quot;)) {</span>
+<span class="fc bfc" id="L32" title="All 2 branches covered.">            if (!allow()) { response.setHeader(&quot;Retry-After&quot;, &quot;60&quot;); reject(response, 429, &quot;Too Many Requests&quot;); return; }</span>
+<span class="fc bfc" id="L33" title="All 2 branches covered.">            if (request.getContentLengthLong() &gt; 16384) { reject(response, 413, &quot;Payload Too Large&quot;); return; }</span>
+            // Also bound streamed/chunked bodies; Content-Length alone is insufficient.
+<span class="fc bfc" id="L35" title="All 2 branches covered.">            if (path.startsWith(&quot;/api/&quot;)) {</span>
+<span class="fc" id="L36">                String supplied = request.getHeader(&quot;X-API-Key&quot;);</span>
+<span class="fc bfc" id="L37" title="All 4 branches covered.">                if (supplied == null || !MessageDigest.isEqual(apiKey, supplied.getBytes(StandardCharsets.UTF_8))) {</span>
+<span class="fc" id="L38">                    reject(response, 401, &quot;Unauthorized&quot;); return;</span>
+                }
+<span class="fc" id="L40">                byte[] body = request.getInputStream().readNBytes(16385);</span>
+<span class="fc bfc" id="L41" title="All 2 branches covered.">                if (body.length &gt; 16384) { reject(response, 413, &quot;Payload Too Large&quot;); return; }</span>
+<span class="fc" id="L42">                HttpServletRequestWrapper wrapped = new HttpServletRequestWrapper(request) {</span>
+                    @Override public ServletInputStream getInputStream() {
+<span class="fc" id="L44">                        var stream = new java.io.ByteArrayInputStream(body);</span>
+<span class="fc" id="L45">                        return new ServletInputStream() {</span>
+<span class="fc" id="L46">                            public int read() { return stream.read(); }</span>
+<span class="nc bnc" id="L47" title="All 2 branches missed.">                            public boolean isFinished() { return stream.available() == 0; }</span>
+<span class="nc" id="L48">                            public boolean isReady() { return true; }</span>
+<span class="nc" id="L49">                            public void setReadListener(ReadListener listener) { throw new UnsupportedOperationException(); }</span>
+                        };
+                    }
+                };
+<span class="fc" id="L53">                chain.doFilter(wrapped, response); return;</span>
+            }
+        }
+<span class="fc" id="L56">        chain.doFilter(request, response);</span>
+<span class="fc" id="L57">    }</span>
+    private void reject(HttpServletResponse response, int status, String title) throws IOException {
+<span class="fc" id="L59">        response.setStatus(status); response.setContentType(&quot;application/problem+json&quot;);</span>
+<span class="fc" id="L60">        response.setHeader(&quot;Cache-Control&quot;, &quot;no-store&quot;);</span>
+<span class="fc" id="L61">        response.getWriter().write(&quot;{\&quot;type\&quot;:\&quot;about:blank\&quot;,\&quot;status\&quot;:&quot; + status + &quot;,\&quot;title\&quot;:\&quot;&quot; + title + &quot;\&quot;}&quot;);</span>
+<span class="fc" id="L62">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

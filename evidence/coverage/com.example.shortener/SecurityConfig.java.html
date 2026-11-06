@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SecurityConfig.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">AI-assisted URL Shortener</a> &gt; <a href="index.source.html" class="el_package">com.example.shortener</a> &gt; <span class="el_source">SecurityConfig.java</span></div><h1>SecurityConfig.java</h1><pre class="source lang-java linenums">package com.example.shortener;
+
+import java.time.Clock;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.*;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.provisioning.InMemoryUserDetailsManager;
+
+@Configuration
+<span class="fc" id="L15">public class SecurityConfig {</span>
+<span class="fc" id="L16">    @Bean UserDetailsService users() { return new InMemoryUserDetailsManager(); }</span>
+    @Bean SecurityFilterChain security(HttpSecurity http, Clock clock,
+            @Value(&quot;${app.api-key}&quot;) String key, @Value(&quot;${app.requests-per-minute}&quot;) int limit) throws Exception {
+<span class="fc" id="L19">        return http.csrf(csrf -&gt; csrf.disable()) // Header API key, no cookies/session authentication.</span>
+<span class="fc" id="L20">                .sessionManagement(s -&gt; s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))</span>
+<span class="fc" id="L21">                .authorizeHttpRequests(a -&gt; a</span>
+<span class="fc" id="L22">                    .requestMatchers(&quot;/api/**&quot;, &quot;/actuator/health&quot;, &quot;/error&quot;).permitAll()</span>
+<span class="fc" id="L23">                    .requestMatchers(HttpMethod.GET, &quot;/s/**&quot;).permitAll()</span>
+<span class="fc" id="L24">                    .requestMatchers(HttpMethod.HEAD, &quot;/s/**&quot;).permitAll()</span>
+<span class="fc" id="L25">                    .anyRequest().denyAll())</span>
+<span class="fc" id="L26">                .addFilterBefore(new RequestGuard(key, limit, clock), UsernamePasswordAuthenticationFilter.class)</span>
+<span class="fc" id="L27">                .build();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

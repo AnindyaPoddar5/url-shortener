@@ -1,0 +1,30 @@
+server:
+  port: ${PORT:8080}
+  address: ${BIND_ADDRESS:127.0.0.1}
+  max-http-request-header-size: 16KB
+  tomcat:
+    max-http-form-post-size: 16KB
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:h2:file:./data/shortener;DB_CLOSE_ON_EXIT=FALSE}
+    username: ${DB_USER:sa}
+    password: ${DB_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  mvc:
+    problemdetails:
+      enabled: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+app:
+  api-key: ${SHORTENER_API_KEY:}
+  base-url: ${BASE_URL:http://localhost:8080}
+  requests-per-minute: ${REQUESTS_PER_MINUTE:6000}

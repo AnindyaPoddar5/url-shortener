@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.example.shortener.MigrationTest
+-------------------------------------------------------------------------------
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.615 s -- in com.example.shortener.MigrationTest
